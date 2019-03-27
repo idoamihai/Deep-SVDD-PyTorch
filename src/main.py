@@ -8,16 +8,19 @@ from utils.config import Config
 from utils.visualization.plot_images_grid import plot_images_grid
 from deepSVDD import DeepSVDD
 from datasets.main import load_dataset
-
+import pdb
+import copy
+import json
 
 ################################################################################
 # Settings
 ################################################################################
+
 @click.command()
-@click.argument('dataset_name', type=click.Choice(['mnist', 'cifar10']))
-@click.argument('net_name', type=click.Choice(['mnist_LeNet', 'cifar10_LeNet']))
-@click.argument('xp_path', type=click.Path(exists=True))
-@click.argument('data_path', type=click.Path(exists=True))
+@click.argument('dataset_name', type=click.Choice(['mnist', 'cifar10']), default='cifar10')
+@click.argument('net_name', type=click.Choice(['mnist_LeNet', 'cifar10_LeNet']), default='cifar10_LeNet')
+@click.argument('xp_path', type=click.Path(exists=True), default = r'../log/cifar10_test')
+@click.argument('data_path', type=click.Path(exists=True), default = r'../data')
 @click.option('--load_config', type=click.Path(exists=True), default=None,
               help='Config JSON-file path (default: None).')
 @click.option('--load_model', type=click.Path(exists=True), default=None,
@@ -53,6 +56,37 @@ from datasets.main import load_dataset
               help='Number of workers for data loading. 0 means that the data will be loaded in the main process.')
 @click.option('--normal_class', type=int, default=0,
               help='Specify the normal class of the dataset (all other classes are considered anomalous).')
+
+#dataset_name='cifar10'
+dataset_name='mnist'
+#net_name='cifar10_LeNet'
+net_name='mnist_LeNet'
+#xp_path=r'../log/cifar10_test'
+xp_path=r'../log/mnist_test'
+data_path=r'../data'
+load_config=None
+load_model=None
+objective='one-class'
+nu=0.1
+device='cuda'
+seed=-1
+optimizer_name='adam'
+lr=0.001
+n_epochs=5
+lr_milestone=0
+batch_size=128
+weight_decay=1e-6
+pretrain=True
+ae_optimizer_name='adam'
+ae_lr=0.001
+ae_n_epochs=10
+ae_lr_milestone=0
+ae_batch_size=128
+ae_weight_decay=1e-6
+n_jobs_dataloader=0
+normal_class=0
+
+
 def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, objective, nu, device, seed,
          optimizer_name, lr, n_epochs, lr_milestone, batch_size, weight_decay, pretrain, ae_optimizer_name, ae_lr,
          ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay, n_jobs_dataloader, normal_class):
@@ -111,6 +145,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
     logger.info('Number of dataloader workers: %d' % n_jobs_dataloader)
 
     # Load data
+    #pdb.set_trace()
     dataset = load_dataset(dataset_name, data_path, normal_class)
 
     # Initialize DeepSVDD model and set neural network \phi
@@ -136,7 +171,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
                            optimizer_name=cfg.settings['ae_optimizer_name'],
                            lr=cfg.settings['ae_lr'],
                            n_epochs=cfg.settings['ae_n_epochs'],
-                           lr_milestones=cfg.settings['ae_lr_milestone'],
+                           lr_milestones=[cfg.settings['ae_lr_milestone']],
                            batch_size=cfg.settings['ae_batch_size'],
                            weight_decay=cfg.settings['ae_weight_decay'],
                            device=device,
@@ -155,7 +190,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
                     optimizer_name=cfg.settings['optimizer_name'],
                     lr=cfg.settings['lr'],
                     n_epochs=cfg.settings['n_epochs'],
-                    lr_milestones=cfg.settings['lr_milestone'],
+                    lr_milestones=[cfg.settings['lr_milestone']],
                     batch_size=cfg.settings['batch_size'],
                     weight_decay=cfg.settings['weight_decay'],
                     device=device,
@@ -172,12 +207,15 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
     if dataset_name in ('mnist', 'cifar10'):
 
         if dataset_name == 'mnist':
-            X_normals = dataset.test_set.test_data[idx_sorted[:32], ...].unsqueeze(1)
-            X_outliers = dataset.test_set.test_data[idx_sorted[-32:], ...].unsqueeze(1)
-
+            #X_normals = dataset.test_set.test_data[idx_sorted[:32], ...].unsqueeze(1)
+            #X_outliers = dataset.test_set.test_data[idx_sorted[-32:], ...].unsqueeze(1)
+            X_normals = dataset.test_set.data[idx_sorted[:32], ...].unsqueeze(1)
+            X_outliers = dataset.test_set.data[idx_sorted[-32:], ...].unsqueeze(1)
         if dataset_name == 'cifar10':
-            X_normals = torch.tensor(np.transpose(dataset.test_set.test_data[idx_sorted[:32], ...], (0, 3, 1, 2)))
-            X_outliers = torch.tensor(np.transpose(dataset.test_set.test_data[idx_sorted[-32:], ...], (0, 3, 1, 2)))
+            #X_normals = torch.tensor(np.transpose(dataset.test_set.test_data[idx_sorted[:32], ...], (0, 3, 1, 2)))
+            #X_outliers = torch.tensor(np.transpose(dataset.test_set.test_data[idx_sorted[-32:], ...], (0, 3, 1, 2)))
+            X_normals = torch.tensor(np.transpose(dataset.test_set.data[idx_sorted[:32], ...], (0, 3, 1, 2)))
+            X_outliers = torch.tensor(np.transpose(dataset.test_set.data[idx_sorted[-32:], ...], (0, 3, 1, 2)))
 
         plot_images_grid(X_normals, export_img=xp_path + '/normals', title='Most normal examples', padding=2)
         plot_images_grid(X_outliers, export_img=xp_path + '/outliers', title='Most anomalous examples', padding=2)
@@ -185,8 +223,18 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
     # Save results, model, and configuration
     deep_SVDD.save_results(export_json=xp_path + '/results.json')
     deep_SVDD.save_model(export_model=xp_path + '/model.tar')
-    cfg.save_config(export_json=xp_path + '/config.json')
 
+    cfg_settings = cfg.settings.copy()
+    for key in cfg.settings.keys():
+        try:
+            with open(xp_path + '/config_key.json', 'w') as fp:
+                json.dump({'key':cfg.settings[key]},fp)
+        except TypeError:
+            cfg_settings.pop(key)
+            continue
+    cfg_ = copy.copy(cfg)
+    cfg_.settings = cfg_settings
+    cfg_.save_config(export_json=xp_path + '/config.json')        
 
 if __name__ == '__main__':
     main()
